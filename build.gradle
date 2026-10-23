@@ -22,20 +22,20 @@ mavenPublishing {
             license {
                 name = "GNU General Public License, Version 3"
                 url = "https://www.gnu.org/licenses/gpl-3.0.html"
-                distribution = "https://www.gnu.org/licenses/gpl-3.0.html."
+                distribution = "repo"
             }
         }
         developers {
             developer {
-                id = "username"
+                id = "Darren-Certlocker"
                 name = "Darren Hudson"
                 url = "https://github.com/Darren-Certlocker"
             }
         }
         scm {
-            url = "https://github.com/username/mylibrary/"
-            connection = "scm:git:git://github.com/username/mylibrary.git"
-            developerConnection = "scm:git:ssh://git@github.com/username/mylibrary.git"
+            url = "https://github.com/certlocker-io/trust-java-client/"
+            connection = "scm:git:https://github.com/certlocker-io/trust-java-client.git"
+            developerConnection = "scm:git:ssh://git@github.com/certlocker-io/trust-java-client.git"
         }
     }
     publishToMavenCentral()
@@ -67,4 +67,13 @@ dependencies {
 
 test {
     useJUnitPlatform()
+}
+
+// Local development installs need no signing key; remote repositories do.
+signing {
+    required = {
+        gradle.taskGraph.allTasks.any {
+            it instanceof org.gradle.api.publish.maven.tasks.PublishToMavenRepository
+        }
+    }
 }
