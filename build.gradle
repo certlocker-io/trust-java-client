@@ -7,7 +7,7 @@ plugins {
 
 
 group = 'io.certlocker'
-version = $ { trustClientVersion }
+version = trustClientVersion
 
 mavenPublishing {
 

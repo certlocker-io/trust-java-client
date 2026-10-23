@@ -1,4 +1,4 @@
-<img align="right" alt="Certlocker" src="https://certlocker.io/Images/logo-white-32.png" width="32" height="32">
+<img align="right" alt="Certlocker" src="https://certlocker.io/logo-white-32.png" width="32" height="32">
 
 # Trust Java Client
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
@@ -115,4 +115,4 @@ final TrustClient client = TrustClient.builder()
 The same builder also accepts `cookieHandler`, `sslContext`, `sslParameters`, `executor`, `priority`, `proxy`, `authenticator` and `localAddress`.
 
 ## License
-Licensed under GNU General Public License v3.0. See the [LICENSE](trust-java-client/LICENSE) file for details.
+Licensed under GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
