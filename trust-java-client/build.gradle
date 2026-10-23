@@ -1,0 +1,70 @@
+plugins {
+    id 'java'
+    id 'java-library'
+    id 'maven-publish'
+    id 'com.vanniktech.maven.publish' version '0.37.0'
+}
+
+
+group = 'io.certlocker'
+version = $ { trustClientVersion }
+
+mavenPublishing {
+
+    coordinates("${group}", "trust-client", "${version}")
+
+    pom {
+        name = "Java Trust Client"
+        description = "A simple library that allows for access to secrets and certificates using Trust tokens."
+        inceptionYear = "2026"
+        url = "https://github.com/certlocker-io/trust-java-client/"
+        licenses {
+            license {
+                name = "GNU General Public License, Version 3"
+                url = "https://www.gnu.org/licenses/gpl-3.0.html"
+                distribution = "https://www.gnu.org/licenses/gpl-3.0.html."
+            }
+        }
+        developers {
+            developer {
+                id = "username"
+                name = "Darren Hudson"
+                url = "https://github.com/Darren-Certlocker"
+            }
+        }
+        scm {
+            url = "https://github.com/username/mylibrary/"
+            connection = "scm:git:git://github.com/username/mylibrary.git"
+            developerConnection = "scm:git:ssh://git@github.com/username/mylibrary.git"
+        }
+    }
+    publishToMavenCentral()
+    signAllPublications()
+}
+
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+
+    implementation platform("tools.jackson:jackson-bom:${jacksonBomVersion}")
+    implementation "tools.jackson.core:jackson-databind"
+
+    compileOnly "org.projectlombok:lombok:${lombokVersion}"
+    annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+
+    testImplementation platform('org.junit:junit-bom:6.0.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
