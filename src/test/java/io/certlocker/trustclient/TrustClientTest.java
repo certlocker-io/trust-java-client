@@ -2,9 +2,6 @@ package io.certlocker.trustclient;
 
 import io.certlocker.trustclient.client.TrustClient;
 import io.certlocker.trustclient.client.TrustClientBuilder;
-import io.certlocker.trustclient.exception.TrustClientException;
-import io.certlocker.trustclient.model.secret.*;
-import io.certlocker.trustclient.service.TrustService;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -117,26 +114,4 @@ public class TrustClientTest {
         assertThrows(IllegalArgumentException.class, () -> builder.priority(0));
     }
 
-    @Test
-    public void soakTest() {
-
-        try (TrustService service = new TrustService(TrustClient.builder()
-                .apiKey("k8sd269vd-abohm.cullis")
-                .url("https://trust.certlocker.io"))) {
-            Secret secret = service.getSecret("mvusgvkv5");
-            System.out.println(secret);
-            Configuration configuration = service.getSecretAsConfiguration("mvusgvkv5");
-            System.out.println(configuration);
-            Pem pem = service.getSecretAsPem("b5fqj6c8d");
-            System.out.println(pem);
-            Password password = service.getSecretAsPassword("v5q7pspif");
-            System.out.println(password);
-            Credentials cred = service.getSecretAsCredentials("17bu1p62uq");
-            System.out.println(cred);
-            PrivateKey privateKey = service.getSecretAsPrivateKey("k8m7c8pps");
-            System.out.println(privateKey);
-        } catch (TrustClientException ex) {
-            System.err.println(ex.getMessage());
-        }
-    }
 }
