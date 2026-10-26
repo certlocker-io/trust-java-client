@@ -18,14 +18,22 @@ The current version is **1.0.2-SNAPSHOT**.
 <dependency>
     <groupId>io.certlocker</groupId>
     <artifactId>trust-client</artifactId>
+<<<<<<< HEAD
     <version>1.0.2-SNAPSHOT</version>
+=======
+    <version>1.0.1</version>
+>>>>>>> 61557f876763fd641b4e5a33874ea42f7e3e13e8
 </dependency>
 ```
 
 **Gradle DSL**
 ```groovy
 dependencies {
+<<<<<<< HEAD
     implementation 'io.certlocker:trust-client:1.0.2-SNAPSHOT'
+=======
+    implementation 'io.certlocker:trust-client:1.0.1'
+>>>>>>> 61557f876763fd641b4e5a33874ea42f7e3e13e8
 }
 ```
 
@@ -139,3 +147,7 @@ The same builder also accepts `cookieHandler`, `sslContext`, `sslParameters`, `e
 
 ## License
 Licensed under GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
+
+## Publishing
+
+See [the publishing guide](docs/publishing.md) for the one-time Sonatype setup and automated GitHub releases.
