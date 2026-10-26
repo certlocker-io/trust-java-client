@@ -1,5 +1,6 @@
 package io.certlocker.trustclient.client;
 
+import io.certlocker.trustclient.auth.AuthCodePrompt;
 import io.certlocker.trustclient.error.CLErrorException;
 import io.certlocker.trustclient.error.TrustError;
 import io.certlocker.trustclient.exception.TrustClientException;
@@ -38,14 +39,45 @@ public final class TrustClient implements AutoCloseable {
     private static final String TOKEN_BASE = TRUST_BASE + "/v1/token";
     private static final String TOKEN_GET = TOKEN_BASE + "/get";
 
+    /** Header for step-up 2FA / accessCode on user-bound tokens (Gateway). */
+    public static final String ACCESS_CODE_HEADER = "x-access-code";
+
     private final URI theUrl;
     private final String theApiKey;
     private final HttpClient theClient;
+    private final AuthCodePrompt theAuthCodePrompt;
+    private volatile String theAccessCode;
 
     TrustClient(URI url, String apiKey, HttpClient httpClient) {
+        this(url, apiKey, httpClient, null);
+    }
+
+    TrustClient(URI url, String apiKey, HttpClient httpClient, AuthCodePrompt authCodePrompt) {
         theUrl = Objects.requireNonNull(url, "url");
         theApiKey = Objects.requireNonNull(apiKey, "apiKey");
         theClient = Objects.requireNonNull(httpClient, "httpClient");
+        theAuthCodePrompt = authCodePrompt;
+    }
+
+    /**
+     * Sets a 2FA / access code for subsequent requests (user-bound tokens).
+     */
+    public void setAccessCode(String accessCode) {
+        theAccessCode = accessCode;
+    }
+
+    /**
+     * Interactively prompts for a 2FA / access code when a prompt was configured on the builder.
+     */
+    public void promptForAccessCode(String reason) throws TrustClientException {
+        if (theAuthCodePrompt == null) {
+            throw new TrustClientException("No AuthCodePrompt configured; call TrustClientBuilder.authCodePrompt(...)");
+        }
+        try {
+            theAccessCode = theAuthCodePrompt.prompt(reason);
+        } catch (Exception e) {
+            throw new TrustClientException("Failed to read authentication code: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -98,16 +130,23 @@ public final class TrustClient implements AutoCloseable {
             requestUrl += "/" + param;
         }
 
-        return HttpRequest.newBuilder()
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(requestUrl))
                 .header("x-api-token", theApiKey)
                 .header("content-type", mediaType)
-                .header("accept", mediaType)
-                .GET()
-                .build();
+                .header("accept", mediaType);
+        if (theAccessCode != null && !theAccessCode.isBlank()) {
+            builder.header(ACCESS_CODE_HEADER, theAccessCode);
+        }
+        return builder.GET().build();
     }
 
     private String processRequest(String url, String param, String mediaType) throws TrustClientException {
+        return processRequest(url, param, mediaType, true);
+    }
+
+    private String processRequest(String url, String param, String mediaType, boolean allowPromptRetry)
+            throws TrustClientException {
         HttpRequest request = request(url, param, mediaType);
         try {
             HttpResponse<String> response = theClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -132,15 +171,28 @@ public final class TrustClient implements AutoCloseable {
 
             if (error == null) {
                 error = new TrustError();
-                error.setErrorMessage("Unknown error");
+                error.setErrorMessage(response.body() != null ? response.body() : "Unknown error");
             }
 
             error.setHttpStatus(response.statusCode());
+            if (allowPromptRetry && theAuthCodePrompt != null && looksLikeStepUp(error.getErrorMessage())) {
+                promptForAccessCode(error.getErrorMessage());
+                return processRequest(url, param, mediaType, false);
+            }
             throw new TrustClientException(error);
 
         } catch (IOException | InterruptedException ex) {
             throw new TrustClientException(ex.getMessage(), ex);
         }
+    }
+
+    private static boolean looksLikeStepUp(String message) {
+        if (message == null) {
+            return false;
+        }
+        String m = message.toLowerCase();
+        return m.contains("2fa") || m.contains("access code") || m.contains("accesscode")
+                || m.contains("verification code") || m.contains("tfa");
     }
 
     /**

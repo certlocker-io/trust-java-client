@@ -1,5 +1,6 @@
 package io.certlocker.trustclient;
 
+import io.certlocker.trustclient.auth.ConsoleAuthCodePrompt;
 import io.certlocker.trustclient.client.TrustClient;
 import io.certlocker.trustclient.client.TrustClientBuilder;
 import io.certlocker.trustclient.exception.TrustClientException;
@@ -137,6 +138,17 @@ public class TrustClientTest {
             System.out.println(privateKey);
         } catch (TrustClientException ex) {
             System.err.println(ex.getMessage());
+        }
+    }
+
+    @Test
+    public void twoFATest() throws TrustClientException {
+        try (TrustService service = new TrustService(TrustClient.builder()
+                .apiKey("k8sd269vd-abohm.cullis")
+                .url("https://trust.certlocker.io")
+                .authCodePrompt(new ConsoleAuthCodePrompt()))) {
+
+
         }
     }
 }

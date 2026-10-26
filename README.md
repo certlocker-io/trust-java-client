@@ -11,21 +11,21 @@ Requires Java 21.
 ## Build configuration
 You can integrate this library into your project by defining it as a __Maven__ or __Gradle__ dependency.
 
-The current version is **1.0.1**.
+The current version is **1.0.2-SNAPSHOT**.
 
 **Maven**
 ```xml
 <dependency>
     <groupId>io.certlocker</groupId>
-    <artifactId>trust-java-client</artifactId>
-    <version>1.0.1</version>
+    <artifactId>trust-client</artifactId>
+    <version>1.0.2-SNAPSHOT</version>
 </dependency>
 ```
 
 **Gradle DSL**
 ```groovy
 dependencies {
-    implementation 'io.certlocker:trust-java-client:1.0.1'
+    implementation 'io.certlocker:trust-client:1.0.2-SNAPSHOT'
 }
 ```
 
@@ -46,7 +46,30 @@ Jackson Databind 3.2.3 (`tools.jackson.core:jackson-databind`) is brought in wit
   - Get the token
 
 ## Getting started
-First, create the client with the Trust URL and an API key.
+
+### CI / machine (preferred) — ambient GitHub OIDC
+
+No long-lived `apiKey`. Workflow needs `permissions: id-token: write`. Audience is per-account:
+
+```java
+TrustClient client = TrustClientBuilder.fromAmbientOidc(
+        "https://trust.certlocker.io",
+        "https://trust.certlocker.io/oidc/<accountId>");
+```
+
+Or via the builder: `.url(...).oidcAudience(...).preferAmbientOidc(true).build()`.
+
+### Human / local — localhost redirect
+
+```java
+TrustClient client = TrustClientBuilder.fromLocalhostLogin(
+        "https://trust.certlocker.io", Duration.ofMinutes(5));
+// Optional: .authCodePrompt(new ConsoleAuthCodePrompt()) for 2FA / accessCode step-up
+```
+
+### Break-glass API key
+
+UI-issued SECRET tokens remain available; do not centre CI on them.
 
 ```java
 final String API_KEY = "YOUR_API_KEY";

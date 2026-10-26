@@ -1,5 +1,12 @@
 package io.certlocker.trustclient.client;
 
+import io.certlocker.trustclient.auth.AuthCodePrompt;
+import io.certlocker.trustclient.auth.LocalhostLogin;
+import io.certlocker.trustclient.exception.TrustClientException;
+import io.certlocker.trustclient.oidc.GitHubActionsOidc;
+import io.certlocker.trustclient.oidc.OidcExchangeResult;
+import io.certlocker.trustclient.oidc.TrustOidcExchange;
+
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import java.net.*;
@@ -47,6 +54,9 @@ public final class TrustClientBuilder {
 
     private URI theUrl;
     private String theApiKey;
+    private String theOidcAudience;
+    private boolean preferAmbientOidc;
+    private AuthCodePrompt theAuthCodePrompt;
     private HttpClient.Builder theHttpClientBuilder = HttpClient.newBuilder()
             .connectTimeout(DEFAULT_CONNECT_TIMEOUT);
 
@@ -105,6 +115,54 @@ public final class TrustClientBuilder {
             throw new IllegalArgumentException("apiKey must not be blank");
         }
         theApiKey = apiKey;
+        return this;
+    }
+
+    /**
+     * Per-account OIDC audience, e.g. {@code https://trust.certlocker.io/oidc/<accountId>}.
+     * Used by {@link #fromAmbientOidc()} / {@link #preferAmbientOidc(boolean)}.
+     */
+    public TrustClientBuilder oidcAudience(String audience) {
+        Objects.requireNonNull(audience, "audience");
+        if (audience.isBlank()) {
+            throw new IllegalArgumentException("oidcAudience must not be blank");
+        }
+        theOidcAudience = audience;
+        return this;
+    }
+
+    /**
+     * When true, {@link #build()} exchanges ambient GitHub Actions OIDC before using a break-glass apiKey.
+     */
+    public TrustClientBuilder preferAmbientOidc(boolean prefer) {
+        preferAmbientOidc = prefer;
+        return this;
+    }
+
+    /**
+     * Convenience: URL + per-account audience; resolves credential via ambient GitHub OIDC exchange.
+     */
+    public static TrustClient fromAmbientOidc(String trustUrl, String audience) throws TrustClientException {
+        return new TrustClientBuilder()
+                .url(trustUrl)
+                .oidcAudience(audience)
+                .preferAmbientOidc(true)
+                .build();
+    }
+
+    /**
+     * Interactive localhost-redirect login (short-lived loopback listener).
+     */
+    public static TrustClient fromLocalhostLogin(String trustUrl, Duration timeout) throws TrustClientException {
+        LocalhostLogin.Result result = LocalhostLogin.login(URI.create(trustUrl.trim()), timeout);
+        return new TrustClientBuilder().url(trustUrl).apiKey(result.tokenId()).build();
+    }
+
+    /**
+     * Prompt used when Gateway requires 2FA / accessCode on a user-bound token.
+     */
+    public TrustClientBuilder authCodePrompt(AuthCodePrompt prompt) {
+        theAuthCodePrompt = prompt;
         return this;
     }
 
@@ -266,9 +324,28 @@ public final class TrustClientBuilder {
         if (theUrl == null) {
             throw new IllegalArgumentException("url is required");
         }
-        if (theApiKey == null || theApiKey.isBlank()) {
-            throw new IllegalArgumentException("apiKey is required");
+        HttpClient httpClient = theHttpClientBuilder.build();
+        String apiKey = theApiKey;
+        if ((apiKey == null || apiKey.isBlank()) || preferAmbientOidc) {
+            if (preferAmbientOidc || GitHubActionsOidc.isAvailable()) {
+                if (theOidcAudience == null || theOidcAudience.isBlank()) {
+                    throw new IllegalArgumentException("oidcAudience is required for ambient OIDC");
+                }
+                try {
+                    OidcExchangeResult exchanged = TrustOidcExchange.fromGitHubActions(theUrl, theOidcAudience);
+                    apiKey = exchanged.tokenId();
+                } catch (TrustClientException e) {
+                    if (apiKey == null || apiKey.isBlank()) {
+                        throw new IllegalStateException("Ambient OIDC exchange failed and no apiKey set", e);
+                    }
+                    // Break-glass apiKey remains when exchange fails and apiKey was provided.
+                }
+            }
         }
-        return new TrustClient(theUrl, theApiKey, theHttpClientBuilder.build());
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalArgumentException(
+                    "apiKey is required (or enable ambient OIDC with oidcAudience / preferAmbientOidc)");
+        }
+        return new TrustClient(theUrl, apiKey, httpClient, theAuthCodePrompt);
     }
 }
