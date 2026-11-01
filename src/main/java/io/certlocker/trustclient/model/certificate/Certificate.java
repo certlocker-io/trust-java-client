@@ -7,7 +7,6 @@ package io.certlocker.trustclient.model.certificate;
 
 import io.certlocker.trustclient.model.asset.AbstractAsset;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
@@ -17,7 +16,6 @@ import java.util.List;
 /**
  * Certificate stored in Trust.
  */
-@NoArgsConstructor
 @Getter
 @Setter
 @ToString
@@ -41,4 +39,10 @@ public class Certificate extends AbstractAsset {
     private CertificateValidation certValidation;
     private String linkId;
     private Integer percentRemaining;
+
+    /**
+     * Creates an empty certificate for JSON binding.
+     */
+    public Certificate() {
+    }
 }

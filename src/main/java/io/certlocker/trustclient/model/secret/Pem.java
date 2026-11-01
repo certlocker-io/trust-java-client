@@ -6,7 +6,6 @@
 package io.certlocker.trustclient.model.secret;
 
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
@@ -16,12 +15,16 @@ import lombok.ToString;
  * @author dhudson
  * 01/02/2026 - 10:01
  */
-
-@NoArgsConstructor
 @Setter
 @Getter
 @ToString
 public class Pem extends CryptoSecret {
     private String username;
     private String key;
+
+    /**
+     * Creates an empty PEM secret for JSON binding.
+     */
+    public Pem() {
+    }
 }

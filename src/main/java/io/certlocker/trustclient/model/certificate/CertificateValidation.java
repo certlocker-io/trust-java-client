@@ -13,10 +13,15 @@ package io.certlocker.trustclient.model.certificate;
  */
 public enum CertificateValidation {
 
+    /** Domain Validated. */
     DV("Domain Validated"),
+    /** Organization Validated. */
     OV("Organization Validated"),
+    /** Extended Validation. */
     EV("Extended Validation"),
+    /** Self-signed. */
     SS("Self Signed"),
+    /** Unknown or unspecified validation. */
     UNKNOWN("Unknown");
 
     private String description;

@@ -1,7 +1,6 @@
 package io.certlocker.trustclient.model.asset;
 
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
@@ -14,7 +13,6 @@ import java.util.List;
  * @author dhudson
  * 22/10/2026 - 13:59
  */
-@NoArgsConstructor
 @Getter
 @Setter
 @ToString
@@ -31,4 +29,10 @@ public abstract class AbstractAsset {
     private LocalDateTime dateUpdated;
     private String lockedBy;
     private LocalDateTime dateLocked;
+
+    /**
+     * Creates an empty asset for JSON binding.
+     */
+    protected AbstractAsset() {
+    }
 }

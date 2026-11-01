@@ -20,14 +20,19 @@ import java.util.Optional;
  */
 public final class GitHubActionsOidc {
 
+    /** GitHub Actions env var naming the OIDC token request URL. */
     public static final String REQUEST_URL_ENV = "ACTIONS_ID_TOKEN_REQUEST_URL";
+
+    /** GitHub Actions env var naming the bearer token for the OIDC request URL. */
     public static final String REQUEST_TOKEN_ENV = "ACTIONS_ID_TOKEN_REQUEST_TOKEN";
 
     private GitHubActionsOidc() {
     }
 
     /**
-     * @return true when running under GitHub Actions with OIDC request env present
+     * Returns whether ambient GitHub Actions OIDC request env is present.
+     *
+     * @return {@code true} when both {@link #REQUEST_URL_ENV} and {@link #REQUEST_TOKEN_ENV} are set
      */
     public static boolean isAvailable() {
         return nonBlank(System.getenv(REQUEST_URL_ENV)) && nonBlank(System.getenv(REQUEST_TOKEN_ENV));
@@ -38,11 +43,20 @@ public final class GitHubActionsOidc {
      *
      * @param audience e.g. {@code https://trust.certlocker.io/oidc/<accountId>}
      * @return raw JWT
+     * @throws TrustClientException if env is missing, the request fails, or the response has no token
      */
     public static String requestIdToken(String audience) throws TrustClientException {
         return requestIdToken(audience, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
     }
 
+    /**
+     * Fetches an ID token using the supplied HTTP client.
+     *
+     * @param audience   e.g. {@code https://trust.certlocker.io/oidc/<accountId>}
+     * @param httpClient client used for the GitHub Actions OIDC request
+     * @return raw JWT
+     * @throws TrustClientException if env is missing, the request fails, or the response has no token
+     */
     public static String requestIdToken(String audience, HttpClient httpClient) throws TrustClientException {
         if (!nonBlank(audience)) {
             throw new TrustClientException("OIDC audience is required");

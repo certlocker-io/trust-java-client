@@ -11,10 +11,15 @@ package io.certlocker.trustclient.model.secret;
  * @author dhudson
  */
 public enum SecretType {
+    /** Private key material. */
     PRIVATE_KEY,
+    /** PEM-encoded key/certificate material. */
     PEM,
+    /** Password string. */
     PASSWORD,
+    /** Username and password pair. */
     CREDENTIALS,
+    /** Free-form configuration text. */
     CONFIGURATION;
 
     /**

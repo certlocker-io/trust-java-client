@@ -7,14 +7,12 @@ package io.certlocker.trustclient.model.secret;
 
 import io.certlocker.trustclient.model.asset.AbstractAsset;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
 /**
  * Secret stored in Trust.
  */
-@NoArgsConstructor
 @Getter
 @Setter
 @ToString
@@ -23,5 +21,11 @@ public class Secret extends AbstractAsset {
     private SecretType secretType;
     private String secret;
     private Integer version;
+
+    /**
+     * Creates an empty secret for JSON binding.
+     */
+    public Secret() {
+    }
 
 }

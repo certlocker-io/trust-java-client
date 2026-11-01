@@ -10,6 +10,7 @@ import io.certlocker.trustclient.error.TrustError;
  */
 public class TrustClientException extends Exception {
 
+    /** Trust error body when the failure came from an HTTP error response; otherwise {@code null}. */
     private final TrustError error;
 
     /**

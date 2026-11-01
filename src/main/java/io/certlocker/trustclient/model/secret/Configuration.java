@@ -1,6 +1,9 @@
 package io.certlocker.trustclient.model.secret;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 
 /**
  * Configuration secret. The secret value is the fetched secret contents.
@@ -11,8 +14,13 @@ import lombok.*;
 @Setter
 @Getter
 @ToString
-@NoArgsConstructor
 @AllArgsConstructor
 public class Configuration {
     private String secret;
+
+    /**
+     * Creates an empty configuration secret for JSON binding.
+     */
+    public Configuration() {
+    }
 }

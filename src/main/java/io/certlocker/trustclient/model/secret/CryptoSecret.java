@@ -6,7 +6,6 @@
 package io.certlocker.trustclient.model.secret;
 
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
@@ -17,11 +16,16 @@ import lombok.Setter;
  */
 @Setter
 @Getter
-@NoArgsConstructor
 public abstract class CryptoSecret {
 
     private SecretKeyAlgorithm keyAlgorithm;
     private String keySize;
+
+    /**
+     * Creates an empty crypto secret for JSON binding.
+     */
+    protected CryptoSecret() {
+    }
 
     /**
      * Returns whether the key algorithm is treated as post-quantum ready.

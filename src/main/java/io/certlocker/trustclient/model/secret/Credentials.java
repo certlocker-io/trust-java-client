@@ -5,7 +5,9 @@
 
 package io.certlocker.trustclient.model.secret;
 
-import lombok.*;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 
 /**
  * Username and password secret.
@@ -13,12 +15,17 @@ import lombok.*;
  * @author dhudson
  * 01/02/2026 - 10:00
  */
-@NoArgsConstructor
 @Setter
 @Getter
 @ToString
 public class Credentials {
     private String username;
     private String password;
+
+    /**
+     * Creates empty credentials for JSON binding.
+     */
+    public Credentials() {
+    }
 
 }

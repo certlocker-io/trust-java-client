@@ -18,4 +18,10 @@ import lombok.ToString;
 public class CLError {
 
     private String message;
+
+    /**
+     * Creates an empty error body for JSON binding.
+     */
+    public CLError() {
+    }
 }

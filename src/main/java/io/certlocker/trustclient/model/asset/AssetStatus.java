@@ -12,9 +12,13 @@ package io.certlocker.trustclient.model.asset;
  * 20/03/2026 - 07:54
  */
 public enum AssetStatus {
+    /** Asset is active and usable. */
     ACTIVE,
+    /** Asset is temporarily suspended. */
     SUSPENDED,
+    /** Asset has expired. */
     EXPIRED,
+    /** Asset has been revoked. */
     REVOKED;
 
     /**

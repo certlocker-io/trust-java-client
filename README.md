@@ -3,61 +3,67 @@
 # Trust Java Client
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-This Trust client communicates with [Certlocker Trust](https://trust.certlocker.io) and
-allows you to read secrets, certificates and tokens.
+Java client for [Certlocker Trust](https://trust.certlocker.io): read secrets, certificates, and tokens over the Gateway API.
 
-Requires Java 21.
+Requires **Java 21**.
 
-## Build configuration
-You can integrate this library into your project by defining it as a __Maven__ or __Gradle__ dependency.
+## Dependency
 
-The current version is **1.0.2-SNAPSHOT**.
+Public coordinate: **`io.certlocker:trust-client:1.0.4`** (see `trustClientVersion` in `gradle.properties`).
 
 **Maven**
 ```xml
 <dependency>
     <groupId>io.certlocker</groupId>
     <artifactId>trust-client</artifactId>
-<<<<<<< HEAD
-    <version>1.0.2-SNAPSHOT</version>
-=======
-    <version>1.0.1</version>
->>>>>>> 61557f876763fd641b4e5a33874ea42f7e3e13e8
+    <version>1.0.4</version>
 </dependency>
 ```
 
-**Gradle DSL**
+**Gradle**
 ```groovy
 dependencies {
-<<<<<<< HEAD
-    implementation 'io.certlocker:trust-client:1.0.2-SNAPSHOT'
-=======
-    implementation 'io.certlocker:trust-client:1.0.1'
->>>>>>> 61557f876763fd641b4e5a33874ea42f7e3e13e8
+    implementation 'io.certlocker:trust-client:1.0.4'
 }
 ```
 
-Jackson Databind 3.2.3 (`tools.jackson.core:jackson-databind`) is brought in with the client.
+Transitive: Jackson Databind via `tools.jackson:jackson-bom:3.2.4`, plus `jose4j` for Device OIDC JWT minting.
 
 ## Features
-`get` returns data regarding the asset. `fetch` returns the contents of the asset.
 
-- Secrets
-  - Get the secret
-  - Fetch the secret contents
-  - Read a secret as PEM, configuration, password, credentials or a private key
-- Certificates
-  - Get the certificate
-  - Fetch the certificate
-  - Fetch the certificate bundle
-- Tokens
-  - Get the token
+`get` returns asset metadata. `fetch` returns asset contents.
 
-## Getting started
+- **Secrets** — get / fetch; typed readers for PEM, configuration, password, credentials, private key
+- **Certificates** — get / fetch / fetch bundle
+- **Tokens** — get
+- **Auth** — UI-minted static API token; ambient OIDC (GitHub Actions, GCP, Azure, Azure DevOps); Device OIDC; optional mint type `SECRET` / `CERTIFICATE` / `MCP`; 2FA `AuthCodePrompt`
+- **Paths** — Gateway calls include `{accountId}`; path account must match the token’s account
 
-### CI / machine (preferred) — ambient GitHub OIDC
+## Authentication
 
-No long-lived `apiKey`. Workflow needs `permissions: id-token: write`. Audience is per-account:
+Prefer federated OIDC for CI and machines. Use a UI-minted SECRET token for break-glass / local human use.
+
+Audience for GitHub, GCP, Azure, and Device OIDC is per-account:
+
+`https://trust.certlocker.io/oidc/<accountId>`
+
+Azure DevOps uses ADO’s fixed audience `api://AzureADTokenExchange`; Trust matches the principal by issuer / `sub`, not the Trust audience URL.
+
+### Static API token (UI-minted)
+
+```java
+TrustClient client = TrustClient.builder()
+        .url("https://trust.certlocker.io")
+        .accountId("<accountId>")
+        .apiToken("<ui-minted-token-id>")
+        .build();
+```
+
+Gateway asset paths include the account, e.g. `/rest/api/v1/secret/{accountId}/fetch`. The path `accountId` must match the token’s account.
+
+### Ambient OIDC (CI / cloud)
+
+`fromAmbientOidc` / `preferAmbientOidc(true)` picks the first available ambient provider: GitHub Actions → GCP → Azure → Azure DevOps. `accountId` is taken from the exchange response when not set on the builder.
 
 ```java
 TrustClient client = TrustClientBuilder.fromAmbientOidc(
@@ -65,89 +71,154 @@ TrustClient client = TrustClientBuilder.fromAmbientOidc(
         "https://trust.certlocker.io/oidc/<accountId>");
 ```
 
-Or via the builder: `.url(...).oidcAudience(...).preferAmbientOidc(true).build()`.
-
-### Human / local — localhost redirect
+Or:
 
 ```java
-TrustClient client = TrustClientBuilder.fromLocalhostLogin(
-        "https://trust.certlocker.io", Duration.ofMinutes(5));
-// Optional: .authCodePrompt(new ConsoleAuthCodePrompt()) for 2FA / accessCode step-up
-```
-
-### Break-glass API key
-
-UI-issued SECRET tokens remain available; do not centre CI on them.
-
-```java
-final String API_KEY = "YOUR_API_KEY";
-final TrustClient client = TrustClient.builder()
-        .apiKey(API_KEY)
+TrustClient client = TrustClient.builder()
         .url("https://trust.certlocker.io")
+        .oidcAudience("https://trust.certlocker.io/oidc/<accountId>")
+        .preferAmbientOidc(true)
         .build();
 ```
 
-After that you can create the TrustService:
+Provider notes:
+
+| Provider | Detection | Needs Trust audience |
+|----------|-----------|----------------------|
+| GitHub Actions | `ACTIONS_ID_TOKEN_REQUEST_URL` + `ACTIONS_ID_TOKEN_REQUEST_TOKEN` (`permissions: id-token: write`) | Yes |
+| GCP | GCE / GKE / Cloud Run metadata | Yes |
+| Azure | App Service identity or IMDS | Yes |
+| Azure DevOps | `SYSTEM_OIDCREQUESTURI` + `SYSTEM_ACCESSTOKEN` | No (fixed ADO aud) |
+
+Explicit provider exchange (then build a client yourself):
 
 ```java
-final TrustService service = new TrustService(client);
+URI trust = URI.create("https://trust.certlocker.io");
+String aud = "https://trust.certlocker.io/oidc/<accountId>";
+
+OidcExchangeResult gha = TrustOidcExchange.fromGitHubActions(trust, aud);
+OidcExchangeResult gcp = TrustOidcExchange.fromGcp(trust, aud);
+OidcExchangeResult azure = TrustOidcExchange.fromAzure(trust, aud);
+OidcExchangeResult ado = TrustOidcExchange.fromAzureDevOps(trust);
+
+TrustClient client = TrustClient.builder()
+        .url(trust)
+        .apiToken(gha.tokenId())
+        .accountId(gha.accountId())
+        .build();
 ```
 
-After that, for example you can read secrets:
+### Device OIDC (enrolled machine)
+
+Mints a short-lived Ed25519 / `EdDSA` JWT from the private key downloaded at enroll, then exchanges for a Trust token. Keep the private key on the machine — never check it in.
+
+```java
+TrustClient client = TrustClientBuilder.fromDeviceOidc(
+        "https://trust.certlocker.io",
+        DeviceOidcConfig.builder()
+                .audience("https://trust.certlocker.io/oidc/<accountId>")
+                .deviceId("laptop-1")
+                .privateKeyPath(Path.of(System.getProperty("user.home"), ".trust", "device.pem"))
+                .keyId("device-abc123") // required when the principal enrolled a keyId
+                .build());
+```
+
+Or mint yourself and call `TrustClientBuilder.fromIdToken(trustUrl, jwt)`.
+
+### Exchange mint types: SECRET / CERTIFICATE / MCP
+
+By default the Gateway uses the matched principal’s `defaultTokenType` (typically `SECRET`). Pass an explicit `TokenType` when the principal allows it:
+
+```java
+URI trust = URI.create("https://trust.certlocker.io");
+String aud = "https://trust.certlocker.io/oidc/<accountId>";
+
+OidcExchangeResult secret = TrustOidcExchange.fromGitHubActions(trust, aud, TokenType.SECRET);
+OidcExchangeResult cert = TrustOidcExchange.fromGcp(trust, aud, TokenType.CERTIFICATE);
+OidcExchangeResult mcp = TrustOidcExchange.fromAzure(trust, aud, TokenType.MCP);
+
+// Device / raw JWT:
+OidcExchangeResult deviceMcp = TrustOidcExchange.fromDeviceOidc(
+        trust,
+        DeviceOidcConfig.builder()
+                .audience(aud)
+                .deviceId("laptop-1")
+                .privateKeyPath(Path.of(System.getProperty("user.home"), ".trust", "device.pem"))
+                .build(),
+        TokenType.MCP);
+
+TrustClient client = TrustClient.builder()
+        .url(trust)
+        .apiToken(secret.tokenId())
+        .accountId(secret.accountId())
+        .build();
+```
+
+`OidcExchangeResult.tokenType()` reports what was minted. Builder helpers (`fromAmbientOidc`, `fromDeviceOidc`, `fromIdToken`) use the principal default.
+
+### 2FA / access-code step-up
+
+User-bound tokens may require an access code on Gateway calls. Configure a prompt on the builder:
+
+```java
+TrustClient client = TrustClient.builder()
+        .url("https://trust.certlocker.io")
+        .accountId("<accountId>")
+        .apiToken("<user-bound-token>")
+        .authCodePrompt(new ConsoleAuthCodePrompt())
+        // or: .authCodePrompt(reason -> /* read code */)
+        .build();
+```
+
+`ConsoleAuthCodePrompt` reads from stdin. Custom `AuthCodePrompt` implementations can use Gradle / IDE input.
+
+## Using TrustService
 
 ```java
 try (TrustService service = new TrustService(TrustClient.builder()
-        .apiKey("YOUR_API_KEY")
-        .url("https://trust.certlocker.io"))) {
+        .url("https://trust.certlocker.io")
+        .accountId("<accountId>")
+        .apiToken("<token>"))) {
     Secret secret = service.getSecret("mvusgvkv5");
-    System.out.println(secret);
     Configuration configuration = service.getSecretAsConfiguration("mvusgvkv5");
-    System.out.println(configuration);
     Pem pem = service.getSecretAsPem("b5fqj6c8d");
-    System.out.println(pem);
     Password password = service.getSecretAsPassword("v5q7pspif");
-    System.out.println(password);
     Credentials cred = service.getSecretAsCredentials("17bu1p62uq");
-    System.out.println(cred);
     PrivateKey privateKey = service.getSecretAsPrivateKey("k8m7c8pps");
-    System.out.println(privateKey);
+
+    Certificate certificate = service.getCertificate("certId");
+    String pemLeaf = service.fetchCertificate("certId");
+    String bundle = service.fetchCertificateBundle("certId");
+
+    Token token = service.getToken("tokenId");
 } catch (TrustClientException ex) {
     System.err.println(ex.getMessage());
 }
 ```
 
-`TrustService` closes the underlying client when it is closed.
+Closing `TrustService` closes the underlying client.
 
 ## HTTP client
-The builder accepts the same settings as `HttpClient.Builder`, so the connection and the HTTP client are configured in one chain. When no HTTP settings are supplied, the client uses a connect timeout of 10 seconds.
+
+The builder accepts the same settings as `HttpClient.Builder`. Default connect timeout is 10 seconds.
 
 ```java
-final TrustClient client = TrustClient.builder()
+TrustClient client = TrustClient.builder()
         .url("https://trust.certlocker.io")
-        .apiKey(API_KEY)
+        .accountId("<accountId>")
+        .apiToken("<token>")
         .connectTimeout(Duration.ofSeconds(10))
         .followRedirects(HttpClient.Redirect.NORMAL)
         .version(HttpClient.Version.HTTP_1_1)
         .build();
 ```
 
-An existing JDK builder can be passed in instead. This replaces any HTTP settings already applied, so call it before the other HTTP methods when combining both.
-
-```java
-final TrustClient client = TrustClient.builder()
-        .url("https://trust.certlocker.io")
-        .apiKey(API_KEY)
-        .httpClientBuilder(HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(5))
-                .followRedirects(HttpClient.Redirect.NORMAL))
-        .build();
-```
-
-The same builder also accepts `cookieHandler`, `sslContext`, `sslParameters`, `executor`, `priority`, `proxy`, `authenticator` and `localAddress`.
+Pass an existing JDK builder with `.httpClientBuilder(...)` (call it before other HTTP methods when combining). Also accepts `cookieHandler`, `sslContext`, `sslParameters`, `executor`, `priority`, `proxy`, `authenticator`, and `localAddress`.
 
 ## License
-Licensed under GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
+
+Licensed under GNU General Public License v3.0. See [LICENSE](LICENSE).
 
 ## Publishing
 
-See [the publishing guide](docs/publishing.md) for the one-time Sonatype setup and automated GitHub releases.
+See [docs/publishing.md](docs/publishing.md) for Sonatype setup and GitHub release publishing.

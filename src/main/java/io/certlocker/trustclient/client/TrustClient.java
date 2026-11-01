@@ -19,6 +19,9 @@ import java.util.Optional;
  * <p>
  * {@code get} methods return the asset record as JSON. {@code fetch} methods return the asset contents.
  * Create an instance with {@link #builder()} or {@link TrustClientBuilder}.
+ * <p>
+ * Multi-tenant Gateway paths require {@code accountId}:
+ * {@code /rest/api/v1/{resource}/{accountId}/…}.
  *
  * @author dhudson
  * 22/10/2026 - 13:00
@@ -28,39 +31,38 @@ public final class TrustClient implements AutoCloseable {
     private static final String APPLICATION_JSON = "application/json";
     private static final String TEXT_PLAIN = "text/plain";
 
-    private static final String TRUST_BASE = "/rest/api";
-    private static final String CERT_BASE = TRUST_BASE + "/v1/cert";
-    private static final String CERT_GET = CERT_BASE + "/get";
-    private static final String CERT_FETCH = CERT_BASE + "/fetch";
-    private static final String CERT_BUNDLE = CERT_BASE + "/fetch-bundle";
-    private static final String SECRET_BASE = TRUST_BASE + "/v1/secret";
-    private static final String SECRET_GET = SECRET_BASE + "/get";
-    private static final String SECRET_FETCH = SECRET_BASE + "/fetch";
-    private static final String TOKEN_BASE = TRUST_BASE + "/v1/token";
-    private static final String TOKEN_GET = TOKEN_BASE + "/get";
+    private static final String TRUST_BASE = "/rest/api/v1";
 
     /** Header for step-up 2FA / accessCode on user-bound tokens (Gateway). */
     public static final String ACCESS_CODE_HEADER = "x-access-code";
+    /** Gateway challenge type when step-up input is required ({@code ACCESS_CODE}/{@code OTP}/{@code EMAIL}). */
+    public static final String ACCESS_RESPONSE_HEADER = "x-access-response";
+    /** HTTP status Gateway uses for step-up; response body is the prompt text to show. */
+    public static final int ACCESS_REQUIRED_STATUS = 401;
 
     private final URI theUrl;
-    private final String theApiKey;
+    private final String theApiToken;
+    private final String theAccountId;
     private final HttpClient theClient;
     private final AuthCodePrompt theAuthCodePrompt;
     private volatile String theAccessCode;
 
-    TrustClient(URI url, String apiKey, HttpClient httpClient) {
-        this(url, apiKey, httpClient, null);
+    TrustClient(URI url, String apiToken, String accountId, HttpClient httpClient) {
+        this(url, apiToken, accountId, httpClient, null);
     }
 
-    TrustClient(URI url, String apiKey, HttpClient httpClient, AuthCodePrompt authCodePrompt) {
+    TrustClient(URI url, String apiToken, String accountId, HttpClient httpClient, AuthCodePrompt authCodePrompt) {
         theUrl = Objects.requireNonNull(url, "url");
-        theApiKey = Objects.requireNonNull(apiKey, "apiKey");
+        theApiToken = Objects.requireNonNull(apiToken, "apiToken");
+        theAccountId = Objects.requireNonNull(accountId, "accountId");
         theClient = Objects.requireNonNull(httpClient, "httpClient");
         theAuthCodePrompt = authCodePrompt;
     }
 
     /**
      * Sets a 2FA / access code for subsequent requests (user-bound tokens).
+     *
+     * @param accessCode code sent as {@link #ACCESS_CODE_HEADER}
      */
     public void setAccessCode(String accessCode) {
         theAccessCode = accessCode;
@@ -68,6 +70,9 @@ public final class TrustClient implements AutoCloseable {
 
     /**
      * Interactively prompts for a 2FA / access code when a prompt was configured on the builder.
+     *
+     * @param reason prompt text shown to the user (often the Gateway response body)
+     * @throws TrustClientException if no prompt is configured or prompting fails
      */
     public void promptForAccessCode(String reason) throws TrustClientException {
         if (theAuthCodePrompt == null) {
@@ -99,12 +104,21 @@ public final class TrustClient implements AutoCloseable {
     }
 
     /**
-     * Returns the API key sent as the {@code x-api-token} header.
+     * Returns the API token sent as the {@code x-api-token} header.
      *
-     * @return API key
+     * @return API token
      */
-    public String getApiKey() {
-        return theApiKey;
+    public String getApiToken() {
+        return theApiToken;
+    }
+
+    /**
+     * Returns the account id used in Gateway paths ({@code /v1/{resource}/{accountId}/…}).
+     *
+     * @return tenant account id
+     */
+    public String getAccountId() {
+        return theAccountId;
     }
 
     /**
@@ -124,6 +138,18 @@ public final class TrustClient implements AutoCloseable {
         theClient.close();
     }
 
+    private String certPath(String action) {
+        return TRUST_BASE + "/cert/" + theAccountId + "/" + action;
+    }
+
+    private String secretPath(String action) {
+        return TRUST_BASE + "/secret/" + theAccountId + "/" + action;
+    }
+
+    private String tokenPath(String action) {
+        return TRUST_BASE + "/token/" + theAccountId + "/" + action;
+    }
+
     private HttpRequest request(String url, String param, String mediaType) {
         String requestUrl = theUrl + url;
         if (param != null) {
@@ -132,7 +158,7 @@ public final class TrustClient implements AutoCloseable {
 
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(requestUrl))
-                .header("x-api-token", theApiKey)
+                .header("x-api-token", theApiToken)
                 .header("content-type", mediaType)
                 .header("accept", mediaType);
         if (theAccessCode != null && !theAccessCode.isBlank()) {
@@ -154,102 +180,114 @@ public final class TrustClient implements AutoCloseable {
                 return response.body();
             }
 
-            TrustError error = null;
-            Optional<String> className = response.headers().firstValue("x-body-type");
-            if (className.isPresent()) {
-                if (className.get().equals("certlocker.gateway.api.model.ErrorDTO")) {
-                    error = MapperService.getMapper().readValue(response.body(), TrustError.class);
-                }
-                if (className.get().equals("certlocker.core.exceptions.CLErrorException")) {
-                    CLErrorException clError = MapperService.getMapper().readValue(response.body(), CLErrorException.class);
-                    error = new TrustError();
-                    if (clError != null) {
-                        error.setErrorMessage(clError.getError().getMessage());
-                    }
-                }
-            }
-
-            if (error == null) {
-                error = new TrustError();
-                error.setErrorMessage(response.body() != null ? response.body() : "Unknown error");
-            }
-
-            error.setHttpStatus(response.statusCode());
-            if (allowPromptRetry && theAuthCodePrompt != null && looksLikeStepUp(error.getErrorMessage())) {
-                promptForAccessCode(error.getErrorMessage());
+            Optional<String> accessResponse = response.headers().firstValue(ACCESS_RESPONSE_HEADER);
+            boolean stepUp = response.statusCode() == ACCESS_REQUIRED_STATUS || accessResponse.isPresent();
+            if (allowPromptRetry && theAuthCodePrompt != null && stepUp) {
+                // Server owns the prompt text (plain body on 401); do not invent local reasons.
+                String prompt = response.body() != null && !response.body().isBlank()
+                        ? response.body().trim()
+                        : "Please enter authentication code";
+                promptForAccessCode(prompt);
                 return processRequest(url, param, mediaType, false);
             }
-            throw new TrustClientException(error);
+
+            throw new TrustClientException(parseError(response));
 
         } catch (IOException | InterruptedException ex) {
             throw new TrustClientException(ex.getMessage(), ex);
         }
     }
 
-    private static boolean looksLikeStepUp(String message) {
-        if (message == null) {
-            return false;
+    private static TrustError parseError(HttpResponse<String> response) {
+        TrustError error = null;
+        Optional<String> className = response.headers().firstValue("x-body-type");
+        if (className.isPresent()) {
+            try {
+                if (className.get().equals("certlocker.gateway.api.model.ErrorDTO")) {
+                    error = MapperService.getMapper().readValue(response.body(), TrustError.class);
+                }
+                if (className.get().equals("certlocker.core.exceptions.CLErrorException")) {
+                    CLErrorException clError = MapperService.getMapper().readValue(response.body(), CLErrorException.class);
+                    error = new TrustError();
+                    if (clError != null && clError.getError() != null) {
+                        error.setErrorMessage(clError.getError().getMessage());
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // fall through to body-as-message
+            }
         }
-        String m = message.toLowerCase();
-        return m.contains("2fa") || m.contains("access code") || m.contains("accesscode")
-                || m.contains("verification code") || m.contains("tfa");
+
+        if (error == null) {
+            error = new TrustError();
+            error.setErrorMessage(response.body() != null && !response.body().isBlank()
+                    ? response.body()
+                    : "Unknown error");
+        }
+        error.setHttpStatus(response.statusCode());
+        return error;
     }
 
     /**
      * Returns the secret record for {@code secretId} as JSON.
      * <p>
      * This is the data regarding the asset. Use {@link #fetchSecret(String)} for the secret contents.
+     * A {@code null} id requests the secret assigned to this token.
      *
-     * @param secretId secret identifier
+     * @param secretId secret identifier, or {@code null} when the token is assigned to one secret
      * @return JSON secret record
      * @throws TrustClientException if the request fails
      */
     public String getSecret(String secretId) throws TrustClientException {
-        return processRequest(SECRET_GET, secretId, APPLICATION_JSON);
+        return processRequest(secretPath("get"), secretId, APPLICATION_JSON);
     }
 
     /**
      * Returns the contents of the secret.
+     * A {@code null} id requests the secret assigned to this token.
      *
-     * @param secretId secret identifier
+     * @param secretId secret identifier, or {@code null} when the token is assigned to one secret
      * @return secret contents
      * @throws TrustClientException if the request fails
      */
     public String fetchSecret(String secretId) throws TrustClientException {
-        return processRequest(SECRET_FETCH, secretId, TEXT_PLAIN);
+        return processRequest(secretPath("fetch"), secretId, TEXT_PLAIN);
     }
 
     /**
      * Returns the certificate record for {@code certificateId} as JSON.
+     * A {@code null} id requests the certificate assigned to this token.
      *
-     * @param certificateId certificate identifier
+     * @param certificateId certificate identifier, or {@code null} when the token is assigned to one certificate
      * @return JSON certificate record
      * @throws TrustClientException if the request fails
      */
     public String getCertificate(String certificateId) throws TrustClientException {
-        return processRequest(CERT_GET, certificateId, APPLICATION_JSON);
+        return processRequest(certPath("get"), certificateId, APPLICATION_JSON);
     }
 
     /**
      * Returns the certificate contents.
+     * A {@code null} id requests the certificate assigned to this token.
      *
-     * @param certificateId certificate identifier
+     * @param certificateId certificate identifier, or {@code null} when the token is assigned to one certificate
      * @return certificate contents
      * @throws TrustClientException if the request fails
      */
     public String fetchCertificate(String certificateId) throws TrustClientException {
-        return processRequest(CERT_FETCH, certificateId, TEXT_PLAIN);
+        return processRequest(certPath("fetch"), certificateId, TEXT_PLAIN);
     }
 
     /**
      * Returns the certificate bundle.
+     * A {@code null} id requests the certificate assigned to this token.
      *
-     * @param certificateId certificate identifier
+     * @param certificateId certificate identifier, or {@code null} when the token is assigned to one certificate
      * @return certificate bundle
      * @throws TrustClientException if the request fails
      */
     public String fetchCertificateBundle(String certificateId) throws TrustClientException {
-        return processRequest(CERT_BUNDLE, certificateId, TEXT_PLAIN);
+        return processRequest(certPath("fetch-bundle"), certificateId, TEXT_PLAIN);
     }
 
     /**
@@ -260,6 +298,6 @@ public final class TrustClient implements AutoCloseable {
      * @throws TrustClientException if the request fails
      */
     public String getToken(String id) throws TrustClientException {
-        return processRequest(TOKEN_GET, id, APPLICATION_JSON);
+        return processRequest(tokenPath("get"), id, APPLICATION_JSON);
     }
 }

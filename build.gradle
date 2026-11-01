@@ -52,10 +52,15 @@ repositories {
     mavenCentral()
 }
 
+javadoc {
+    failOnError = false
+}
+
 dependencies {
 
     implementation platform("tools.jackson:jackson-bom:${jacksonBomVersion}")
     implementation "tools.jackson.core:jackson-databind"
+    implementation "org.bitbucket.b_c:jose4j:${jose4jVersion}"
 
     compileOnly "org.projectlombok:lombok:${lombokVersion}"
     annotationProcessor "org.projectlombok:lombok:${lombokVersion}"

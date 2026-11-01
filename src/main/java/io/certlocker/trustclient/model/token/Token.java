@@ -2,7 +2,6 @@ package io.certlocker.trustclient.model.token;
 
 import io.certlocker.trustclient.model.asset.AbstractAsset;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
@@ -15,7 +14,6 @@ import java.util.List;
  * @author dhudson
  * 22/10/2026 - 14:31
  */
-@NoArgsConstructor
 @Setter
 @Getter
 @ToString
@@ -36,4 +34,10 @@ public class Token extends AbstractAsset {
     private String agentId;
     private LocalDateTime startTime;
     private Integer percentRemaining;
+
+    /**
+     * Creates an empty token for JSON binding.
+     */
+    public Token() {
+    }
 }

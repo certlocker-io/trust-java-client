@@ -1,7 +1,6 @@
 package io.certlocker.trustclient.error;
 
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
@@ -13,11 +12,16 @@ import lombok.ToString;
  */
 @Getter
 @Setter
-@NoArgsConstructor
 @ToString
 public class CLErrorException {
 
     private CLError error;
     private String message;
+
+    /**
+     * Creates an empty error envelope for JSON binding.
+     */
+    public CLErrorException() {
+    }
 
 }

@@ -23,7 +23,7 @@ Export the private key directly into GitHub secrets without printing it into a t
 gpg --armor --export-secret-keys YOUR_KEY_FINGERPRINT | gh secret set MAVEN_SIGNING_KEY --repo certlocker-io/trust-java-client
 ```
 
-Set the other values through GitHub's UI or interactive `gh secret set`. Do not paste credentials into issues or chat. These are publishing credentials; `TRUST_API_KEY` is unrelated and is not needed by CI.
+Set the other values through GitHub's UI or interactive `gh secret set`. Do not paste credentials into issues or chat. These are publishing credentials; `TRUST_API_TOKEN` is unrelated and is not needed by CI.
 
 ## Release
 

@@ -1,8 +1,13 @@
 package io.certlocker.trustclient.client;
 
 import io.certlocker.trustclient.auth.AuthCodePrompt;
-import io.certlocker.trustclient.auth.LocalhostLogin;
 import io.certlocker.trustclient.exception.TrustClientException;
+import io.certlocker.trustclient.oidc.DeviceOidcConfig;
+import io.certlocker.trustclient.oidc.DeviceOidcJwt;
+import io.certlocker.trustclient.oidc.DeviceOidcPrivateKey;
+import io.certlocker.trustclient.oidc.AzureDevOpsOidc;
+import io.certlocker.trustclient.oidc.AzureIdentityToken;
+import io.certlocker.trustclient.oidc.GcpIdentityToken;
 import io.certlocker.trustclient.oidc.GitHubActionsOidc;
 import io.certlocker.trustclient.oidc.OidcExchangeResult;
 import io.certlocker.trustclient.oidc.TrustOidcExchange;
@@ -11,12 +16,14 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import java.net.*;
 import java.net.http.HttpClient;
+import java.nio.file.Path;
+import java.security.interfaces.EdECPrivateKey;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 
 /**
- * Builds a {@link TrustClient} connected to Trust with a URL and an API key.
+ * Builds a {@link TrustClient} connected to Trust with a URL and an API token.
  * <p>
  * HTTP settings are the same values accepted by {@link HttpClient.Builder}, so
  * the connection and the HTTP client are configured in one chain. When no HTTP
@@ -25,7 +32,8 @@ import java.util.concurrent.Executor;
  * <pre>{@code
  * TrustClient client = new TrustClientBuilder()
  *         .url("https://trust.example.com")
- *         .apiKey(apiKey)
+ *         .accountId(accountId)
+ *         .apiToken(apiToken)
  *         .connectTimeout(Duration.ofSeconds(10))
  *         .followRedirects(HttpClient.Redirect.NORMAL)
  *         .build();
@@ -34,7 +42,8 @@ import java.util.concurrent.Executor;
  * <pre>{@code
  * TrustClient client = new TrustClientBuilder()
  *         .url("https://trust.example.com")
- *         .apiKey(apiKey)
+ *         .accountId(accountId)
+ *         .apiToken(apiToken)
  *         .httpClientBuilder(HttpClient.newBuilder()
  *                 .connectTimeout(Duration.ofSeconds(5)))
  *         .build();
@@ -53,7 +62,8 @@ public final class TrustClientBuilder {
     public static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(10);
 
     private URI theUrl;
-    private String theApiKey;
+    private String theApiToken;
+    private String theAccountId;
     private String theOidcAudience;
     private boolean preferAmbientOidc;
     private AuthCodePrompt theAuthCodePrompt;
@@ -103,24 +113,44 @@ public final class TrustClientBuilder {
     }
 
     /**
-     * Sets the API key sent as the {@code x-api-token} header.
+     * Sets the API token sent as the {@code x-api-token} header.
      *
-     * @param apiKey non-blank API key
+     * @param apiToken non-blank API token
      * @return this builder
-     * @throws IllegalArgumentException if {@code apiKey} is blank
+     * @throws IllegalArgumentException if {@code apiToken} is blank
      */
-    public TrustClientBuilder apiKey(String apiKey) {
-        Objects.requireNonNull(apiKey, "apiKey");
-        if (apiKey.isBlank()) {
-            throw new IllegalArgumentException("apiKey must not be blank");
+    public TrustClientBuilder apiToken(String apiToken) {
+        Objects.requireNonNull(apiToken, "apiToken");
+        if (apiToken.isBlank()) {
+            throw new IllegalArgumentException("apiToken must not be blank");
         }
-        theApiKey = apiKey;
+        theApiToken = apiToken;
+        return this;
+    }
+
+    /**
+     * Tenant account id for Gateway paths ({@code /v1/{resource}/{accountId}/…}).
+     * Must match the API token's account.
+     *
+     * @param accountId non-blank account id
+     * @return this builder
+     * @throws IllegalArgumentException if {@code accountId} is blank
+     */
+    public TrustClientBuilder accountId(String accountId) {
+        Objects.requireNonNull(accountId, "accountId");
+        if (accountId.isBlank()) {
+            throw new IllegalArgumentException("accountId must not be blank");
+        }
+        theAccountId = accountId;
         return this;
     }
 
     /**
      * Per-account OIDC audience, e.g. {@code https://trust.certlocker.io/oidc/<accountId>}.
-     * Used by {@link #fromAmbientOidc()} / {@link #preferAmbientOidc(boolean)}.
+     * Used by {@link #fromAmbientOidc(String, String)} and {@link #preferAmbientOidc(boolean)}.
+     *
+     * @param audience non-blank per-account audience URL
+     * @return this builder
      */
     public TrustClientBuilder oidcAudience(String audience) {
         Objects.requireNonNull(audience, "audience");
@@ -132,7 +162,11 @@ public final class TrustClientBuilder {
     }
 
     /**
-     * When true, {@link #build()} exchanges ambient GitHub Actions OIDC before using a break-glass apiKey.
+     * When true, {@link #build()} exchanges ambient GitHub Actions, GCP, Azure, or Azure DevOps OIDC
+     * before using a break-glass apiToken.
+     *
+     * @param prefer {@code true} to prefer ambient OIDC exchange
+     * @return this builder
      */
     public TrustClientBuilder preferAmbientOidc(boolean prefer) {
         preferAmbientOidc = prefer;
@@ -140,7 +174,14 @@ public final class TrustClientBuilder {
     }
 
     /**
-     * Convenience: URL + per-account audience; resolves credential via ambient GitHub OIDC exchange.
+     * Convenience: URL + per-account audience; resolves credential via ambient GitHub, GCP, Azure,
+     * or Azure DevOps OIDC exchange.
+     * {@code accountId} is taken from the exchange response (must match the audience tenant).
+     *
+     * @param trustUrl Trust/Gateway base URL
+     * @param audience per-account OIDC audience
+     * @return client authenticated with the exchanged SECRET token
+     * @throws TrustClientException if ambient OIDC exchange fails (wrapped as {@link IllegalStateException} from {@link #build()})
      */
     public static TrustClient fromAmbientOidc(String trustUrl, String audience) throws TrustClientException {
         return new TrustClientBuilder()
@@ -151,15 +192,99 @@ public final class TrustClientBuilder {
     }
 
     /**
-     * Interactive localhost-redirect login (short-lived loopback listener).
+     * Explicit OIDC JWT → Gateway exchange → {@link TrustClient}.
+     * <p>
+     * Use for DEVICE / workload JWTs (or any already-acquired id token). Does not read ambient
+     * GitHub Actions env — pass the JWT from enrollment / dogfood mint / agent.
+     *
+     * @param trustUrl Trust/Gateway base URL (e.g. {@code http://localhost:8080/gateway})
+     * @param idToken  signed OIDC JWT ({@code iss}/{@code aud}/{@code device_id} as required by Trust)
+     * @return client authenticated with the exchanged SECRET token
+     * @throws TrustClientException if exchange fails or {@code accountId} is missing from the response
      */
-    public static TrustClient fromLocalhostLogin(String trustUrl, Duration timeout) throws TrustClientException {
-        LocalhostLogin.Result result = LocalhostLogin.login(URI.create(trustUrl.trim()), timeout);
-        return new TrustClientBuilder().url(trustUrl).apiKey(result.tokenId()).build();
+    public static TrustClient fromIdToken(String trustUrl, String idToken) throws TrustClientException {
+        Objects.requireNonNull(trustUrl, "trustUrl");
+        Objects.requireNonNull(idToken, "idToken");
+        if (trustUrl.isBlank()) {
+            throw new IllegalArgumentException("trustUrl must not be blank");
+        }
+        if (idToken.isBlank()) {
+            throw new IllegalArgumentException("idToken must not be blank");
+        }
+        URI url = URI.create(trustUrl.trim());
+        OidcExchangeResult exchanged = TrustOidcExchange.exchange(url, idToken);
+        if (exchanged.accountId() == null || exchanged.accountId().isBlank()) {
+            throw new TrustClientException("OIDC exchange response missing accountId");
+        }
+        return new TrustClientBuilder()
+                .url(url)
+                .apiToken(exchanged.tokenId())
+                .accountId(exchanged.accountId())
+                .build();
+    }
+
+    /**
+     * DEVICE OIDC: mint Ed25519/{@code EdDSA} JWT from enrolled private key → Gateway exchange →
+     * {@link TrustClient} with a short-lived {@code TokenType.SECRET}.
+     * <p>
+     * Private key stays on the machine (path or PEM string). Does not disturb
+     * static {@link #apiToken(String)} paths.
+     *
+     * @param trustUrl Trust/Gateway base URL
+     * @param config   audience, deviceId, private key path or PEM, optional keyId / ttl
+     * @return client authenticated with the exchanged SECRET token
+     * @throws TrustClientException if minting or exchange fails
+     */
+    public static TrustClient fromDeviceOidc(String trustUrl, DeviceOidcConfig config)
+            throws TrustClientException {
+        Objects.requireNonNull(trustUrl, "trustUrl");
+        Objects.requireNonNull(config, "config");
+        if (trustUrl.isBlank()) {
+            throw new IllegalArgumentException("trustUrl must not be blank");
+        }
+        EdECPrivateKey key = config.getPrivateKeyPath() != null
+                ? DeviceOidcPrivateKey.loadFromFile(config.getPrivateKeyPath())
+                : DeviceOidcPrivateKey.loadFromPem(config.getPrivateKeyPem());
+        String idToken = DeviceOidcJwt.mint(
+                config.getIssuer(),
+                config.getAudience(),
+                config.getDeviceId(),
+                key,
+                config.getKeyId(),
+                config.getTtlMinutes());
+        return fromIdToken(trustUrl, idToken);
+    }
+
+    /**
+     * DEVICE OIDC convenience: private key file path + required enrollment fields.
+     *
+     * @param trustUrl       Trust/Gateway base URL
+     * @param audience       per-account aud (e.g. {@code https://trust.certlocker.io/oidc/<accountId>})
+     * @param deviceId       enrolled {@code device_id}
+     * @param privateKeyPath PKCS#8 PEM path from ui-edge enroll download
+     * @param keyId          optional JWT {@code kid} (must match enrolled keyId when principal has one)
+     * @return client authenticated with the exchanged SECRET token
+     * @throws TrustClientException if minting or exchange fails
+     */
+    public static TrustClient fromDeviceOidc(
+            String trustUrl,
+            String audience,
+            String deviceId,
+            Path privateKeyPath,
+            String keyId) throws TrustClientException {
+        return fromDeviceOidc(trustUrl, DeviceOidcConfig.builder()
+                .audience(audience)
+                .deviceId(deviceId)
+                .privateKeyPath(privateKeyPath)
+                .keyId(keyId)
+                .build());
     }
 
     /**
      * Prompt used when Gateway requires 2FA / accessCode on a user-bound token.
+     *
+     * @param prompt interactive prompt implementation
+     * @return this builder
      */
     public TrustClientBuilder authCodePrompt(AuthCodePrompt prompt) {
         theAuthCodePrompt = prompt;
@@ -317,35 +442,68 @@ public final class TrustClientBuilder {
     /**
      * Builds the client.
      *
-     * @return a client for the configured URL and API key
-     * @throws IllegalArgumentException if the URL or API key has not been set
+     * @return a client for the configured URL, account, and API token
+     * @throws IllegalArgumentException if the URL, account id, or API token has not been set
      */
     public TrustClient build() {
         if (theUrl == null) {
             throw new IllegalArgumentException("url is required");
         }
         HttpClient httpClient = theHttpClientBuilder.build();
-        String apiKey = theApiKey;
-        if ((apiKey == null || apiKey.isBlank()) || preferAmbientOidc) {
-            if (preferAmbientOidc || GitHubActionsOidc.isAvailable()) {
-                if (theOidcAudience == null || theOidcAudience.isBlank()) {
-                    throw new IllegalArgumentException("oidcAudience is required for ambient OIDC");
-                }
+        String apiToken = theApiToken;
+        String accountId = theAccountId;
+        if ((apiToken == null || apiToken.isBlank()) || preferAmbientOidc) {
+            boolean ambientGha = GitHubActionsOidc.isAvailable();
+            boolean ambientGcp = !ambientGha && GcpIdentityToken.isAvailable();
+            boolean ambientAzure = !ambientGha && !ambientGcp && AzureIdentityToken.isAvailable();
+            boolean ambientAzureDevOps = !ambientGha && !ambientGcp && !ambientAzure
+                    && AzureDevOpsOidc.isAvailable();
+            if (preferAmbientOidc || ambientGha || ambientGcp || ambientAzure || ambientAzureDevOps) {
                 try {
-                    OidcExchangeResult exchanged = TrustOidcExchange.fromGitHubActions(theUrl, theOidcAudience);
-                    apiKey = exchanged.tokenId();
-                } catch (TrustClientException e) {
-                    if (apiKey == null || apiKey.isBlank()) {
-                        throw new IllegalStateException("Ambient OIDC exchange failed and no apiKey set", e);
+                    OidcExchangeResult exchanged;
+                    if (ambientGha) {
+                        requireOidcAudience("GitHub Actions");
+                        exchanged = TrustOidcExchange.fromGitHubActions(theUrl, theOidcAudience);
+                    } else if (ambientGcp) {
+                        requireOidcAudience("GCP");
+                        exchanged = TrustOidcExchange.fromGcp(theUrl, theOidcAudience);
+                    } else if (ambientAzure) {
+                        requireOidcAudience("Azure");
+                        exchanged = TrustOidcExchange.fromAzure(theUrl, theOidcAudience);
+                    } else if (ambientAzureDevOps) {
+                        // ADO tokens use fixed aud api://AzureADTokenExchange — no Trust audience.
+                        exchanged = TrustOidcExchange.fromAzureDevOps(theUrl);
+                    } else if (preferAmbientOidc && AzureDevOpsOidc.isAvailable()) {
+                        exchanged = TrustOidcExchange.fromAzureDevOps(theUrl);
+                    } else {
+                        throw new TrustClientException(
+                                "No ambient OIDC provider available (GitHub Actions, GCP, Azure, or Azure DevOps)");
                     }
-                    // Break-glass apiKey remains when exchange fails and apiKey was provided.
+                    apiToken = exchanged.tokenId();
+                    if (accountId == null || accountId.isBlank()) {
+                        accountId = exchanged.accountId();
+                    }
+                } catch (TrustClientException e) {
+                    if (apiToken == null || apiToken.isBlank()) {
+                        throw new IllegalStateException("Ambient OIDC exchange failed and no apiToken set", e);
+                    }
+                    // Break-glass apiToken remains when exchange fails and apiToken was provided.
                 }
             }
         }
-        if (apiKey == null || apiKey.isBlank()) {
+        if (apiToken == null || apiToken.isBlank()) {
             throw new IllegalArgumentException(
-                    "apiKey is required (or enable ambient OIDC with oidcAudience / preferAmbientOidc)");
+                    "apiToken is required (or enable ambient OIDC with oidcAudience / preferAmbientOidc)");
         }
-        return new TrustClient(theUrl, apiKey, httpClient, theAuthCodePrompt);
+        if (accountId == null || accountId.isBlank()) {
+            throw new IllegalArgumentException("accountId is required");
+        }
+        return new TrustClient(theUrl, apiToken, accountId, httpClient, theAuthCodePrompt);
+    }
+
+    private void requireOidcAudience(String providerLabel) throws TrustClientException {
+        if (theOidcAudience == null || theOidcAudience.isBlank()) {
+            throw new TrustClientException("oidcAudience is required for " + providerLabel + " OIDC");
+        }
     }
 }

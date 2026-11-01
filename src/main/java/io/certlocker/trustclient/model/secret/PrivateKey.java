@@ -6,7 +6,6 @@
 package io.certlocker.trustclient.model.secret;
 
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
@@ -16,10 +15,15 @@ import lombok.ToString;
  * @author dhudson
  * 29/07/2026 - 11:48
  */
-@NoArgsConstructor
 @Setter
 @Getter
 @ToString
 public class PrivateKey extends CryptoSecret {
     private String key;
+
+    /**
+     * Creates an empty private key secret for JSON binding.
+     */
+    public PrivateKey() {
+    }
 }
