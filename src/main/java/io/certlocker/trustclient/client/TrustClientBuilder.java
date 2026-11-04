@@ -64,6 +64,7 @@ public final class TrustClientBuilder {
     private URI theUrl;
     private String theApiToken;
     private String theAccountId;
+    private boolean legacyApi;
     private String theOidcAudience;
     private boolean preferAmbientOidc;
     private AuthCodePrompt theAuthCodePrompt;
@@ -125,6 +126,16 @@ public final class TrustClientBuilder {
             throw new IllegalArgumentException("apiToken must not be blank");
         }
         theApiToken = apiToken;
+        return this;
+    }
+
+    /**
+     * Select pre-account Gateway routes explicitly; no automatic fallback.
+     * @param legacy whether to use legacy routes
+     * @return this builder
+     */
+    public TrustClientBuilder legacyApi(boolean legacy) {
+        legacyApi = legacy;
         return this;
     }
 
@@ -495,10 +506,10 @@ public final class TrustClientBuilder {
             throw new IllegalArgumentException(
                     "apiToken is required (or enable ambient OIDC with oidcAudience / preferAmbientOidc)");
         }
-        if (accountId == null || accountId.isBlank()) {
+        if (!legacyApi && (accountId == null || accountId.isBlank())) {
             throw new IllegalArgumentException("accountId is required");
         }
-        return new TrustClient(theUrl, apiToken, accountId, httpClient, theAuthCodePrompt);
+        return new TrustClient(theUrl, apiToken, legacyApi ? "" : accountId, httpClient, theAuthCodePrompt);
     }
 
     private void requireOidcAudience(String providerLabel) throws TrustClientException {

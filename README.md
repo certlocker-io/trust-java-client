@@ -9,21 +9,21 @@ Requires **Java 21**.
 
 ## Dependency
 
-Public coordinate: **`io.certlocker:trust-client:1.0.4`** (see `trustClientVersion` in `gradle.properties`).
+Public coordinate: **`io.certlocker:trust-client:1.0.5`** (see `trustClientVersion` in `gradle.properties`).
 
 **Maven**
 ```xml
 <dependency>
     <groupId>io.certlocker</groupId>
     <artifactId>trust-client</artifactId>
-    <version>1.0.4</version>
+    <version>1.0.5</version>
 </dependency>
 ```
 
 **Gradle**
 ```groovy
 dependencies {
-    implementation 'io.certlocker:trust-client:1.0.4'
+    implementation 'io.certlocker:trust-client:1.0.5'
 }
 ```
 
@@ -186,9 +186,9 @@ try (TrustService service = new TrustService(TrustClient.builder()
     Credentials cred = service.getSecretAsCredentials("17bu1p62uq");
     PrivateKey privateKey = service.getSecretAsPrivateKey("k8m7c8pps");
 
-    Certificate certificate = service.getCertificate("certId");
-    String pemLeaf = service.fetchCertificate("certId");
-    String bundle = service.fetchCertificateBundle("certId");
+    Certificate certificate = service.getCertificate("certificate-token-id");
+    String pemLeaf = service.fetchCertificate("certificate-token-id");
+    String bundle = service.fetchCertificateBundle("certificate-token-id");
 
     Token token = service.getToken("tokenId");
 } catch (TrustClientException ex) {
@@ -222,3 +222,30 @@ Licensed under GNU General Public License v3.0. See [LICENSE](LICENSE).
 ## Publishing
 
 See [docs/publishing.md](docs/publishing.md) for Sonatype setup and GitHub release publishing.
+
+## Gateway rollout compatibility (2026-11-04)
+
+Legacy Gateway URLs and the new account-scoped URLs are both supported. Select
+the mode explicitly during rollout; authentication or authorization failures never
+trigger a retry against the other mode. The account must belong to the token.
+
+```java
+// Existing Gateway:
+var client = TrustClient.builder().url("https://trust.certlocker.io")
+        .apiToken(token).legacyApi(true).build();
+// New Gateway: omit legacyApi(true), and provide accountId(accountId).
+```
+
+Base URLs omit `/rest`. Certificate methods take a CERTIFICATE access-token ID,
+not a certificate asset ID; null/blank uses the configured API token. Assigned
+secret metadata first resolves `secret_id`/`secretId` from token metadata. OIDC
+exchange accepts snake_case and camelCase responses and sends both request aliases.
+
+Validation: `./gradlew test` exercises both URL modes, assigned resources, encoded
+IDs, denial without fallback, and both OIDC JSON contracts. Default tests no
+longer call live services or contain embedded live credentials. This Java client
+was tested locally; live Java/real workload OIDC was not run.
+
+Version 1.0.5 must be published before releasing Gradle plugin 1.0.3. For local
+integration testing, run `./gradlew test publishToMavenLocal`, then in the plugin
+run `./gradlew test -PuseMavenLocal=true`. No remote artifacts were published.

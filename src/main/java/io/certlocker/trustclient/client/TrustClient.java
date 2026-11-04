@@ -139,26 +139,31 @@ public final class TrustClient implements AutoCloseable {
     }
 
     private String certPath(String action) {
-        return TRUST_BASE + "/cert/" + theAccountId + "/" + action;
+        return TRUST_BASE + "/cert/" + (theAccountId.isEmpty() ? "" : encode(theAccountId) + "/") + action;
     }
 
     private String secretPath(String action) {
-        return TRUST_BASE + "/secret/" + theAccountId + "/" + action;
+        return TRUST_BASE + "/secret/" + (theAccountId.isEmpty() ? "" : encode(theAccountId) + "/") + action;
     }
 
     private String tokenPath(String action) {
-        return TRUST_BASE + "/token/" + theAccountId + "/" + action;
+        return TRUST_BASE + "/token/" + (theAccountId.isEmpty() ? "" : encode(theAccountId) + "/") + action;
+    }
+
+    private static String encode(String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     private HttpRequest request(String url, String param, String mediaType) {
         String requestUrl = theUrl + url;
         if (param != null) {
-            requestUrl += "/" + param;
+            requestUrl += "/" + encode(param);
         }
 
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(requestUrl))
                 .header("x-api-token", theApiToken)
+                .header("User-Agent", "CertLocker-Trust-Java/1.0.5")
                 .header("content-type", mediaType)
                 .header("accept", mediaType);
         if (theAccessCode != null && !theAccessCode.isBlank()) {
@@ -239,6 +244,14 @@ public final class TrustClient implements AutoCloseable {
      * @throws TrustClientException if the request fails
      */
     public String getSecret(String secretId) throws TrustClientException {
+        if (secretId == null || secretId.isBlank()) {
+            var token = MapperService.getMapper().readTree(getToken(theApiToken));
+            var id = token.get("secret_id");
+            if (id == null) id = token.get("secretId");
+            if (id == null || id.isNull() || id.asString().isBlank())
+                throw new TrustClientException("API token is not assigned to a secret");
+            secretId = id.asString();
+        }
         return processRequest(secretPath("get"), secretId, APPLICATION_JSON);
     }
 
@@ -258,36 +271,36 @@ public final class TrustClient implements AutoCloseable {
      * Returns the certificate record for {@code certificateId} as JSON.
      * A {@code null} id requests the certificate assigned to this token.
      *
-     * @param certificateId certificate identifier, or {@code null} when the token is assigned to one certificate
+     * @param certificateId CERTIFICATE access-token ID, or {@code null} to use the configured token
      * @return JSON certificate record
      * @throws TrustClientException if the request fails
      */
     public String getCertificate(String certificateId) throws TrustClientException {
-        return processRequest(certPath("get"), certificateId, APPLICATION_JSON);
+        return processRequest(certPath("get"), certificateId == null || certificateId.isBlank() ? theApiToken : certificateId, APPLICATION_JSON);
     }
 
     /**
      * Returns the certificate contents.
      * A {@code null} id requests the certificate assigned to this token.
      *
-     * @param certificateId certificate identifier, or {@code null} when the token is assigned to one certificate
+     * @param certificateId CERTIFICATE access-token ID, or {@code null} to use the configured token
      * @return certificate contents
      * @throws TrustClientException if the request fails
      */
     public String fetchCertificate(String certificateId) throws TrustClientException {
-        return processRequest(certPath("fetch"), certificateId, TEXT_PLAIN);
+        return processRequest(certPath("fetch"), certificateId == null || certificateId.isBlank() ? theApiToken : certificateId, TEXT_PLAIN);
     }
 
     /**
      * Returns the certificate bundle.
      * A {@code null} id requests the certificate assigned to this token.
      *
-     * @param certificateId certificate identifier, or {@code null} when the token is assigned to one certificate
+     * @param certificateId CERTIFICATE access-token ID, or {@code null} to use the configured token
      * @return certificate bundle
      * @throws TrustClientException if the request fails
      */
     public String fetchCertificateBundle(String certificateId) throws TrustClientException {
-        return processRequest(certPath("fetch-bundle"), certificateId, TEXT_PLAIN);
+        return processRequest(certPath("fetch-bundle"), certificateId == null || certificateId.isBlank() ? theApiToken : certificateId, TEXT_PLAIN);
     }
 
     /**

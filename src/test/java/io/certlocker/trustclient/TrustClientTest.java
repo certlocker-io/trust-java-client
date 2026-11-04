@@ -1,7 +1,6 @@
 package io.certlocker.trustclient;
 
 import com.sun.net.httpserver.HttpServer;
-import io.certlocker.trustclient.auth.ConsoleAuthCodePrompt;
 import io.certlocker.trustclient.client.TrustClient;
 import io.certlocker.trustclient.client.TrustClientBuilder;
 import io.certlocker.trustclient.exception.TrustClientException;
@@ -137,30 +136,6 @@ public class TrustClientTest {
         assertThrows(IllegalArgumentException.class, () -> builder.priority(0));
     }
 
-    @Test
-    public void soakTest() {
-
-        try (TrustService service = new TrustService(TrustClient.builder()
-                .apiToken("k8sd269vd-abohm.cullis")
-                .accountId("REPLACE_ACCOUNT_ID")
-                .url("https://trust.certlocker.io"))) {
-            Secret secret = service.getSecret("mvusgvkv5");
-            System.out.println(secret);
-            Configuration configuration = service.getSecretAsConfiguration("mvusgvkv5");
-            System.out.println(configuration);
-            Pem pem = service.getSecretAsPem("b5fqj6c8d");
-            System.out.println(pem);
-            Password password = service.getSecretAsPassword("v5q7pspif");
-            System.out.println(password);
-            Credentials cred = service.getSecretAsCredentials("17bu1p62uq");
-            System.out.println(cred);
-            PrivateKey privateKey = service.getSecretAsPrivateKey("k8m7c8pps");
-            System.out.println(privateKey);
-        } catch (TrustClientException ex) {
-            System.err.println(ex.getMessage());
-        }
-    }
-
     /**
      * Exercises request → Gateway needsInput (401 + {@code x-access-response} + prompt body) →
      * prompt shows server text → retry with {@code x-access-code} → success.
@@ -225,26 +200,4 @@ public class TrustClientTest {
         }
     }
 
-    /**
-     * Manual live check against a local Gateway (user-bound SECRET token).
-     * <p>
-     * {@link ConsoleAuthCodePrompt} reads via {@code Scanner(System.in)} — run with stdin
-     * attached (IDE “Allow input from stdin”, or a terminal). Gateway/DS on {@code localhost:8080}.
-     */
-    @Test
-    public void twoFATestLiveLocalhost() {
-        // eq8v0tlei-brake_tinter
-        // eq8s760up-sazes_blimps
-        try (TrustService service = new TrustService(TrustClient.builder()
-                .apiToken("eq8s760up-sazes_blimps")
-                .accountId("REPLACE_ACCOUNT_ID")
-                .url("http://localhost:8080/gateway")
-                .authCodePrompt(new ConsoleAuthCodePrompt()))) {
-
-            String contents = service.fetchSecret();
-            System.out.println(contents);
-        } catch (TrustClientException ex) {
-            System.err.println(ex.getMessage());
-        }
-    }
 }

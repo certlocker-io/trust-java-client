@@ -26,7 +26,7 @@ import java.time.ZoneOffset;
 public final class TrustOidcExchange {
 
     private static final String PATH = "/rest/api/v1/oidc/exchange";
-    /** Gateway JSON is camelCase (not the asset snake_case mapper). */
+    /** Accept both released Gateway JSON naming conventions. */
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private TrustOidcExchange() {
@@ -118,21 +118,21 @@ public final class TrustOidcExchange {
             if (root == null) {
                 throw new TrustClientException("OIDC exchange returned empty body");
             }
-            String error = text(root, "errorMessage");
+            String error = textEither(root, "errorMessage", "error_message");
             if (error != null && !error.isBlank()) {
                 throw new TrustClientException("OIDC exchange denied: " + error);
             }
-            String tokenId = text(root, "tokenId");
+            String tokenId = textEither(root, "tokenId", "token_id");
             if (tokenId == null || tokenId.isBlank()) {
                 throw new TrustClientException("OIDC exchange response missing tokenId");
             }
-            Instant expiresAt = parseExpires(text(root, "expiresAt"));
+            Instant expiresAt = parseExpires(textEither(root, "expiresAt", "expires_at"));
             return new OidcExchangeResult(
                     tokenId,
                     expiresAt,
-                    text(root, "tokenType"),
-                    text(root, "accountId"),
-                    text(root, "principalId"));
+                    textEither(root, "tokenType", "token_type"),
+                    textEither(root, "accountId", "account_id"),
+                    textEither(root, "principalId", "principal_id"));
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -323,8 +323,10 @@ public final class TrustOidcExchange {
     private static String buildRequestBody(String idToken, TokenType tokenType) {
         StringBuilder b = new StringBuilder(64 + idToken.length());
         b.append("{\"idToken\":").append(quote(idToken));
+        b.append(",\"id_token\":").append(quote(idToken));
         if (tokenType != null) {
             b.append(",\"tokenType\":").append(quote(tokenType.name()));
+            b.append(",\"token_type\":").append(quote(tokenType.name()));
         }
         b.append('}');
         return b.toString();
@@ -343,6 +345,11 @@ public final class TrustOidcExchange {
                 return null;
             }
         }
+    }
+
+    private static String textEither(JsonNode root, String camel, String snake) {
+        String value = text(root, snake);
+        return value == null || value.isBlank() ? text(root, camel) : value;
     }
 
     private static String text(JsonNode root, String field) {
