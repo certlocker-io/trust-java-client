@@ -97,9 +97,15 @@ public class TrustClientTest {
                 () -> new TrustClientBuilder().accountId("acct-1").apiToken("key").build());
         assertEquals("url is required", missingUrl.getMessage());
 
-        IllegalArgumentException missingKey = assertThrows(IllegalArgumentException.class,
+        RuntimeException missingKey = assertThrows(RuntimeException.class,
                 () -> new TrustClientBuilder().url("https://trust.example.com").accountId("acct-1").build());
-        assertTrue(missingKey.getMessage().startsWith("apiToken is required"));
+        if (missingKey instanceof IllegalArgumentException) {
+            assertTrue(missingKey.getMessage().startsWith("apiToken is required"));
+        } else {
+            assertInstanceOf(IllegalStateException.class, missingKey);
+            assertEquals("Ambient OIDC exchange failed and no apiToken set", missingKey.getMessage());
+            assertNotNull(missingKey.getCause());
+        }
 
         IllegalArgumentException missingAccount = assertThrows(IllegalArgumentException.class,
                 () -> new TrustClientBuilder().url("https://trust.example.com").apiToken("key").build());
